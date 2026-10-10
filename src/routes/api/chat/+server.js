@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import OpenAI from 'openai';
+import { checkRateLimit } from '$lib/server/rateLimit.js';
 
 const SYSTEM_PROMPT = `You are Priyadarshini Balasundaram's portfolio assistant. Answer questions about Priyadarshini in first person as if you are her, keeping responses concise and conversational. Only use the facts below; never invent employers, numbers, dates, or skills. Here is the context about Priyadarshini:
 
@@ -79,7 +80,10 @@ function parseBody(body) {
 			!ALLOWED_ROLES.has(m.role) ||
 			typeof m.content !== 'string'
 		) {
-			return { error: 'Each message must have role (user or assistant) and content (string)', status: 400 };
+			return {
+				error: 'Each message must have role (user or assistant) and content (string)',
+				status: 400
+			};
 		}
 		totalLen += m.content.length;
 		if (totalLen > MAX_CONTENT_LENGTH) {
@@ -97,7 +101,14 @@ function jsonError(message, status) {
 }
 
 /** @type {import('./$types').RequestHandler} */
-export async function POST({ request }) {
+export async function POST({ request, getClientAddress }) {
+	const limit = await checkRateLimit(getClientAddress());
+	if (!limit.ok) {
+		const response = jsonError(limit.message, limit.status);
+		if (limit.retryAfter) response.headers.set('Retry-After', String(limit.retryAfter));
+		return response;
+	}
+
 	const apiKey = env.OPENAI_API_KEY;
 
 	if (!apiKey) {
@@ -132,11 +143,12 @@ export async function POST({ request }) {
 			{ signal: request.signal }
 		);
 	} catch (err) {
+		// Details stay in the server logs; the browser only gets a generic message.
+		console.error('OpenAI request failed', err?.status, err?.error?.message || err?.message);
 		const statusCode = Number(err?.status);
-		const isKnownHttpStatus = Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600;
-		const status = isKnownHttpStatus ? statusCode : 502;
-		const message = err?.error?.message || err?.message || 'Chat service unavailable. Try again later.';
-		return jsonError(message, status);
+		// An upstream 429 means our OpenAI quota or rate limit, which isn't the visitor's fault.
+		const status = statusCode === 429 ? 503 : 502;
+		return jsonError('Chat service unavailable. Try again later.', status);
 	}
 
 	const encoder = new TextEncoder();

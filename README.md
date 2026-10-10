@@ -14,12 +14,19 @@ npm run dev
 
 ## Environment variables
 
-| Variable         | Purpose                                     |
-| ---------------- | ------------------------------------------- |
-| `OPENAI_API_KEY` | Key used by `/api/chat` (required)          |
-| `OPENAI_MODEL`   | Chat model, defaults to `gpt-4o-mini`       |
+| Variable                   | Purpose                                                              |
+| -------------------------- | -------------------------------------------------------------------- |
+| `OPENAI_API_KEY`           | Key used by `/api/chat` (required)                                   |
+| `OPENAI_MODEL`             | Chat model, defaults to `gpt-4o-mini`                                |
+| `UPSTASH_REDIS_REST_URL`   | Upstash Redis URL for rate limiting (required in production)         |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis token for rate limiting (required in production)       |
+| `CHAT_GLOBAL_DAILY_LIMIT`  | Chat requests allowed per day across all visitors, defaults to `500` |
 
-Set the same variables in Vercel under Project Settings → Environment Variables.
+Set the same variables in Vercel under Project Settings → Environment Variables, and mark `OPENAI_API_KEY` and the Upstash token as Sensitive. The Upstash integration from the Vercel Marketplace may add them as `KV_REST_API_URL` / `KV_REST_API_TOKEN`, which the code also accepts.
+
+## Rate limiting
+
+`/api/chat` allows 5 requests per minute and 30 per day per IP, plus a global daily cap. Over the limit it returns 429 with a `Retry-After` header. In production it fails closed (503) if Redis isn't configured; locally it falls back to an in-memory limiter.
 
 ## Where the content lives
 

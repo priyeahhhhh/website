@@ -1,4 +1,6 @@
 <script>
+	import { tick } from 'svelte';
+
 	const starters = [
 		'What did you do at Sigma Corporation?',
 		'Tell me about the cotton capstone project.',
@@ -12,10 +14,12 @@
 	let input = $state('');
 	let loading = $state(false);
 	/** @type {HTMLElement | null} */
-	let messagesEnd = $state(null);
+	let scroller = $state(null);
 
-	function scrollToBottom() {
-		messagesEnd?.scrollIntoView({ behavior: 'smooth' });
+	// Scroll only the chat box. scrollIntoView would also scroll the page itself.
+	async function scrollToBottom() {
+		await tick();
+		if (scroller) scroller.scrollTop = scroller.scrollHeight;
 	}
 
 	async function send(text = input.trim()) {
@@ -39,7 +43,12 @@
 			});
 
 			if (!res.ok) {
-				messages[assistantIdx].content = 'Sorry, something went wrong. Try again later.';
+				let message = 'Sorry, something went wrong. Try again later.';
+				if (res.status === 429 || res.status === 503) {
+					const data = await res.json().catch(() => null);
+					if (typeof data?.error === 'string') message = data.error;
+				}
+				messages[assistantIdx].content = message;
 				loading = false;
 				scrollToBottom();
 				return;
@@ -78,6 +87,7 @@
 
 	<div class="rounded-lg border border-border bg-card">
 		<div
+			bind:this={scroller}
 			class="flex flex-col gap-3 p-4"
 			style="min-height: 260px; max-height: 400px; overflow-y: auto;"
 		>
@@ -122,7 +132,6 @@
 					</div>
 				{/each}
 			{/if}
-			<div bind:this={messagesEnd}></div>
 		</div>
 
 		<div class="border-t border-border p-3">
